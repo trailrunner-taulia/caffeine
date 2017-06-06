@@ -86,8 +86,8 @@ public final class PeriodicResetCountMin4 extends CountMin4 {
       return;
     }
 
-    additions++;
-    if (additions != period) {
+    additions += step;
+    if (additions < period) {
       return;
     }
 
