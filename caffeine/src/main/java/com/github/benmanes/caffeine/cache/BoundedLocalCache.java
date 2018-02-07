@@ -70,6 +70,7 @@ import javax.annotation.concurrent.ThreadSafe;
 
 import com.github.benmanes.caffeine.base.UnsafeAccess;
 import com.github.benmanes.caffeine.cache.Async.AsyncExpiry;
+import com.github.benmanes.caffeine.cache.HillClimber.Adaptation;
 import com.github.benmanes.caffeine.cache.LinkedDeque.PeekingIterator;
 import com.github.benmanes.caffeine.cache.References.InternalReference;
 import com.github.benmanes.caffeine.cache.stats.StatsCounter;
@@ -164,6 +165,7 @@ abstract class BoundedLocalCache<K, V> extends BLCHeader.DrainStatusRef<K, V>
   final NodeFactory<K, V> nodeFactory;
   final ReentrantLock evictionLock;
   final CacheWriter<K, V> writer;
+  final HillClimber<K> climber;
   final Weigher<K, V> weigher;
   final Executor executor;
   final boolean isAsync;
@@ -185,6 +187,7 @@ abstract class BoundedLocalCache<K, V> extends BLCHeader.DrainStatusRef<K, V>
     drainBuffersTask = new PerformCleanupTask();
     nodeFactory = NodeFactory.newFactory(builder, isAsync);
     data = new ConcurrentHashMap<>(builder.getInitialCapacity());
+    climber = new HintedClimber<>(Math.max(builder.getMaximum(), 1), PERCENT_MAIN);
     readBuffer = evicts() || collectKeys() || collectValues() || expiresAfterAccess()
         ? new BoundedBuffer<>()
         : Buffer.disabled();
@@ -1182,6 +1185,79 @@ abstract class BoundedLocalCache<K, V> extends BLCHeader.DrainStatusRef<K, V>
     }
   }
 
+  static final HillClimber.QueueType[] QUEUE_TYPES = HillClimber.QueueType.values();
+
+  @GuardedBy("evictionLock")
+  private void climb(K key, @Nullable Node<K, V> node) {
+    if (node == null) {
+      climber.onMiss(key);
+    } else {
+      climber.onHit(key, QUEUE_TYPES[node.getQueueType()]);
+    }
+
+    Adaptation adaptation = climber.adapt(edenWeightedSize(), mainProtectedWeightedSize());
+    if (weightedSize() < maximum()) {
+      return;
+    }
+    if (adaptation.type == Adaptation.Type.INCREASE_WINDOW) {
+      increaseWindow(adaptation.amount);
+    } else if (adaptation.type == Adaptation.Type.DECREASE_WINDOW) {
+      decreaseWindow(adaptation.amount);
+    }
+  }
+
+  @GuardedBy("evictionLock")
+  @SuppressWarnings("NullAway")
+  private void increaseWindow(int amount) {
+    if (mainProtectedMaximum() == 0L) {
+      return;
+    }
+
+    int steps = Math.min(amount, (int) mainProtectedMaximum());
+    for (int i = 0; i < steps; i++) {
+      lazySetEdenMaximum(edenMaximum() + 1);
+      lazySetMainProtectedMaximum(mainProtectedMaximum() - 1);
+
+      demoteProtected();
+      Node<K, V> candidate = accessOrderProbationDeque().pollLast();
+      candidate.setQueueType(EDEN);
+      accessOrderEdenDeque().add(candidate);
+      lazySetEdenWeightedSize(edenWeightedSize() + 1);
+    }
+  }
+
+  @GuardedBy("evictionLock")
+  @SuppressWarnings("NullAway")
+  private void demoteProtected() {
+    if (mainProtectedWeightedSize() > mainProtectedMaximum()) {
+      Node<K, V> demote = accessOrderProtectedDeque().poll();
+      demote.setQueueType(PROBATION);
+      accessOrderProbationDeque().add(demote);
+      lazySetMainProtectedWeightedSize(mainProtectedWeightedSize() - demote.getPolicyWeight());
+    }
+  }
+
+  @GuardedBy("evictionLock")
+  @SuppressWarnings("NullAway")
+  private void decreaseWindow(int amount) {
+    if (edenMaximum() == 0L) {
+      return;
+    }
+
+    int steps = Math.min(amount, (int) edenMaximum());
+    for (int i = 0; i < steps; i++) {
+      if (amount > 0) {
+        lazySetEdenMaximum(edenMaximum() - 1);
+        lazySetMainProtectedMaximum(mainProtectedMaximum() + 1);
+
+        Node<K, V> candidate = accessOrderEdenDeque().poll();
+        candidate.setQueueType(PROBATION);
+        accessOrderProbationDeque().add(candidate);
+        lazySetEdenWeightedSize(edenWeightedSize() - 1);
+      }
+    }
+  }
+
   /** Updates the node's location in the page replacement policy. */
   @GuardedBy("evictionLock")
   void onAccess(Node<K, V> node) {
@@ -1198,6 +1274,7 @@ abstract class BoundedLocalCache<K, V> extends BLCHeader.DrainStatusRef<K, V>
       } else {
         reorder(accessOrderProtectedDeque(), node);
       }
+      climb(key, node);
     } else if (expiresAfterAccess()) {
       reorder(accessOrderEdenDeque(), node);
     }
@@ -1317,6 +1394,7 @@ abstract class BoundedLocalCache<K, V> extends BLCHeader.DrainStatusRef<K, V>
         K key = node.getKey();
         if (key != null) {
           frequencySketch().increment(key);
+          climb(key, null);
         }
       }
 

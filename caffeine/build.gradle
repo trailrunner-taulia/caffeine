@@ -26,8 +26,11 @@ plugins.withType(EclipsePlugin) {
 }
 
 dependencies {
+  compile group: 'org.apache.commons', name: 'commons-math3', version: '3.6.1'
+  compile 'com.clearspring.analytics:stream:2.9.5'
+  compile libraries.guava
+
   testCompile libraries.ycsb
-  testCompile libraries.guava
   testCompile libraries.fastutil
   testCompile testLibraries.junit
   testCompile testLibraries.testng

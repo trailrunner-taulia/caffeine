@@ -33,7 +33,6 @@ import javax.annotation.Nullable;
 import com.github.benmanes.caffeine.cache.simulator.BasicSettings;
 import com.github.benmanes.caffeine.cache.simulator.admission.Admittor;
 import com.github.benmanes.caffeine.cache.simulator.admission.TinyLfu;
-import com.github.benmanes.caffeine.cache.simulator.admission.countmin4.HintedResetCountMin4;
 import com.github.benmanes.caffeine.cache.simulator.policy.Policy;
 import com.github.benmanes.caffeine.cache.simulator.policy.PolicyStats;
 import com.github.benmanes.caffeine.cache.simulator.policy.sketch.climbing.HillClimber.Adaptation;
@@ -206,8 +205,8 @@ public final class HillClimberWindowTinyLfuPolicy implements Policy {
   private void climb(long key, @Nullable QueueType queue) {
 //    if (data.size() < maximumSize) {
 //      return;
-//    } else 
-   	if (queue == null) {
+//    } else
+     if (queue == null) {
       climber.onMiss(key);
     } else {
       climber.onHit(key, queue);
@@ -282,9 +281,9 @@ public final class HillClimberWindowTinyLfuPolicy implements Policy {
     printSegmentSizes();
 
     if (climber instanceof HintedClimber) {
-    	policyStats.setExtraInfo(((HintedClimber) climber).getExtraInfo());
-   	}    	
-    
+      policyStats.setExtraInfo(((HintedClimber) climber).getExtraInfo());
+     }
+
     long windowSize = data.values().stream().filter(n -> n.queue == WINDOW).count();
     long probationSize = data.values().stream().filter(n -> n.queue == PROBATION).count();
     long protectedSize = data.values().stream().filter(n -> n.queue == PROTECTED).count();
