@@ -28,6 +28,9 @@ import com.github.benmanes.caffeine.cache.impl.ConcurrentMapCache;
 import com.github.benmanes.caffeine.cache.impl.Ehcache3;
 import com.github.benmanes.caffeine.cache.impl.ElasticSearchCache;
 import com.github.benmanes.caffeine.cache.impl.ExpiringMapCache;
+import com.github.benmanes.caffeine.cache.impl.GroupedCacheAdapter1;
+import com.github.benmanes.caffeine.cache.impl.GroupedCacheAdapter2;
+import com.github.benmanes.caffeine.cache.impl.GroupedCacheAdapter3;
 import com.github.benmanes.caffeine.cache.impl.GuavaCache;
 import com.github.benmanes.caffeine.cache.impl.LinkedHashMapCache;
 import com.github.benmanes.caffeine.cache.impl.TCache;
@@ -108,6 +111,21 @@ public enum CacheType {
   ExpiringMap_Lru {
     @Override public <K, V> BasicCache<K, V> create(int maximumSize) {
       return new ExpiringMapCache<>(maximumSize, ExpirationPolicy.ACCESSED);
+    }
+  },
+  GroupedCacheAdapter1 {
+    @Override public <K, V> BasicCache<K, V> create(int maximumSize) {
+      return new GroupedCacheAdapter1<>(maximumSize);
+    }
+  },
+  GroupedCacheAdapter2 {
+    @Override public <K, V> BasicCache<K, V> create(int maximumSize) {
+      return new GroupedCacheAdapter2<>(maximumSize);
+    }
+  },
+  GroupedCacheAdapter3 {
+    @Override public <K, V> BasicCache<K, V> create(int maximumSize) {
+      return new GroupedCacheAdapter3<>(maximumSize);
     }
   },
   Guava {
